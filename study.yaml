@@ -1,0 +1,166 @@
+# 10,000-record version of the analysis (NCVR and PDS reference files of
+# 10,000 records). Used for the fidelity gate's operating characteristics and the
+# 10,000-record comparisons reported in the paper. The full-scale analysis is
+# configs/study_scale.yaml; configs/paper.yaml reproduces the preliminary analysis.
+#
+# Differences from paper.yaml:
+# - clean names are synthesised by swapping surnames within subgroup, which keeps
+#   name frequencies exact (the paper's sampler distorts them; M3);
+# - adds a partly supervised mode: the pseudo-truth profile with the link-breaking
+#   mechanisms it cannot see (surname error, full surname replacement, multi-field
+#   co-occurrence) calibrated against a small random clerical sample of true pairs,
+#   the hybrid strategy proposed in the Discussion.
+data_dir: ../data/raw
+output_dir: ../outputs/study
+
+scenarios:
+  NCVR: scenarios/ncvr.yaml
+  PDS: scenarios/pds.yaml
+
+evaluation:
+  seeds: 20
+  target_precision: 0.90
+
+# Clean-name synthesiser (src/ofeval/synthesis.py; comparison: scripts/synthesis_comparison.py).
+# stratified_swap with `strata: []` permutes surnames within subgroup: exact name
+# frequencies, score landscape near the Monte Carlo null, ~1-2% of synthetic names
+# recreate a unique observed name. Finer strata (e.g. blocking keys with
+# min_stratum_size: 5) match the landscape more closely but recreate 3-5%.
+synthesis:
+  method: stratified_swap
+  strata: []
+  min_stratum_size: 2
+  rare_pair_max_count: 1
+
+# Per-scenario override: use the lowest-disclosure synthesiser that the gate accepts.
+# PDS has no subgroup, so swapping across the whole file dilutes near-duplicate names:
+# replicas under-produce false matches (precision +3.6 pp) and the live gate rejects them
+# on ambiguity_rate. Blocking-key strata with min_stratum_size 10 restore it (precision
+# +0.2 pp, gate accepts) at 2.2% vs 0.9% unique observed names recreated. NCVR passes
+# with the default.
+synthesis_by_scenario:
+  PDS:
+    method: stratified_swap
+    strata:
+      - [forename_prefix2, surname_prefix2, surname_len_bin]
+      - [forename_prefix2, surname_prefix2]
+      - [forename_initial, surname_prefix2]
+      - [surname_prefix2]
+    min_stratum_size: 10
+    rare_pair_max_count: 1
+
+learning:
+  pseudo_truth_floor: 0.70
+  sensitivity_floors: [0.50, 0.70, 0.90, 0.95]
+  partly_supervised:
+    clerical_sample_size: 200      # ~2% of comparison records reviewed clerically
+    seed: 20260508
+    calibrate: [surname_error_rate, full_surname_replacement, multi_field_error]
+  # Indirect-inference calibration (src/ofeval/calibration.py): fit the profile so that
+  # replicas reproduce the observed task's label-free moments (learner-on-task rates,
+  # best-match bands); `calibrated_clerical` adds a clerical sample's rate estimates,
+  # weighted by their binomial standard errors. Calibration seeds are separate from the
+  # evaluation seeds, so the gate never judges replicas the profile was fitted on.
+  calibration:
+    first_seed: 901
+    seeds: 6
+    workers: 4
+    max_iter: 12
+    clerical_sample_size: 200
+    clerical_seed: 20260508
+
+modes:
+  - label: Supervised
+    profile: supervised
+    gate: benchmark
+    legacy_gate: B_score_tight_live
+  - label: Pseudo-truth + label-free gate
+    profile: pseudo_truth
+    gate: live
+    legacy_gate: B_score_tight_live
+  - label: Pseudo-truth only
+    profile: pseudo_truth
+    gate: null
+    legacy_gate: null
+  - label: Partly supervised + label-free gate
+    profile: partly_supervised
+    gate: live
+    legacy_gate: B_score_tight_live
+  - label: Calibrated (label-free) + gate
+    profile: calibrated
+    gate: live
+    legacy_gate: null
+  - label: Calibrated + clerical 200 + gate
+    profile: calibrated_clerical
+    gate: live
+    legacy_gate: null
+
+# Generator-level gate: definitions and margins are explained in configs/paper.yaml.
+# noise/multiplicity (src/ofeval/gate.py, GateSettings): with ~12 applicable checks,
+# an uncorrected empirical noise band rejected the correct generator in 3/10 NCVR
+# redraws; half-normal noise with Bonferroni rejected it in 0/10 while keeping
+# 10/10 power against every wrong mechanism (scripts/gate_operating_characteristics.py).
+# full_name_duplication_rate margin 0.01 (1 pp): synthesisers that shift spine full-name duplication by
+# more than ~1 pp mis-state precision by ~3 pp or more (scripts/name_duplication_check.py).
+# full_name_collisions_per_record margin 0.10 (relative): cluster size, not just sharing, drives exact-name
+# false matches; precision moves ~0.11 pp per 1% change (10% -> ~1 pp).
+gate:
+  alpha: 0.05
+  noise: half_normal
+  multiplicity: bonferroni
+  policies:
+    live_basic:
+      label_free: true
+      description: M2 label-free gate; population and score-landscape layers only.
+      margins: {top_forename_share: 0.02, top_surname_share: 0.02,
+                match_probability_band_mass_tv: 0.02, candidate_size_distribution_tv: 0.02}
+    live:
+      label_free: true
+      description: Label-free; adds best-match bands, learner-on-task (indirect inference) and ambiguity, overall and per subgroup.
+      margins: {top_forename_share: 0.02, top_surname_share: 0.02,
+                match_probability_band_mass_tv: 0.02, candidate_size_distribution_tv: 0.02,
+                best_match_band_tv: 0.02, learned_error_exposure: 0.02, learned_forename_error_rate: 0.02,
+                learned_surname_error_rate: 0.02, learned_multi_field_error: 0.02, ambiguity_rate: 0.01,
+                subgroup_ambiguity_rate: 0.01, subgroup_best_match_band_tv: 0.03, full_name_duplication_rate: 0.01,
+                subgroup_full_name_duplication_rate: 0.01,
+                full_name_collisions_per_record: 0.10}
+    benchmark:
+      label_free: false
+      description: Benchmark with known truth; live plus the truth-based mechanism rates.
+      margins: {top_forename_share: 0.02, top_surname_share: 0.02,
+                match_probability_band_mass_tv: 0.02, candidate_size_distribution_tv: 0.02,
+                best_match_band_tv: 0.02, learned_error_exposure: 0.02, learned_forename_error_rate: 0.02,
+                learned_surname_error_rate: 0.02, learned_multi_field_error: 0.02, ambiguity_rate: 0.01,
+                subgroup_ambiguity_rate: 0.01, subgroup_best_match_band_tv: 0.03, full_name_duplication_rate: 0.01,
+                subgroup_full_name_duplication_rate: 0.01,
+                full_name_collisions_per_record: 0.10,
+                error_exposure: 0.02, forename_error_rate: 0.02, surname_error_rate: 0.02,
+                full_surname_replacement: 0.02, multi_field_error: 0.02}
+
+main_gate_policy: live
+legacy_main_gate_policy: B_score_tight_live
+
+legacy_gate_policies:
+  A_current_live:
+    label_free: true
+    description: Structural checks plus broad score-landscape check.
+    checks: {top_forename_share: 0.05, top_surname_share: 0.05,
+             match_probability_band_mass_tv: 0.10}
+  B_score_tight_live:
+    label_free: true
+    description: Tight observable gate (used in the paper).
+    checks: {top_forename_share: 0.05, top_surname_share: 0.05,
+             match_probability_band_mass_tv: 0.05, candidate_size_distribution_tv: 0.06}
+  C_mechanistic_moderate:
+    label_free: false
+    description: Benchmark validation gate.
+    checks: {top_forename_share: 0.05, top_surname_share: 0.05,
+             match_probability_band_mass_tv: 0.10, error_exposure: 0.05,
+             forename_error_rate: 0.05, surname_error_rate: 0.05, multi_field_error: 0.05}
+  D_mechanistic_strict:
+    label_free: false
+    description: Strict benchmark gate.
+    checks: {top_forename_share: 0.05, top_surname_share: 0.05,
+             match_probability_band_mass_tv: 0.05, error_exposure: 0.025,
+             forename_error_rate: 0.025, surname_error_rate: 0.025, full_surname_replacement: 0.025,
+             multi_field_error: 0.025}

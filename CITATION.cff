@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Observational Fidelity for synthetic linkage data (ofeval)"
+version: 1.0.0
+authors:
+  - family-names: Lam
+    given-names: Joseph
+  - family-names: Mantovani
+    given-names: Giulia
+  - family-names: Pearson
+    given-names: Jonathan
+  - family-names: Christen
+    given-names: Peter
+  - family-names: Harron
+    given-names: Katie

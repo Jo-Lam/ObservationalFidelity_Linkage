@@ -1,0 +1,123 @@
+# Preliminary analysis referred to in the paper: a name sampler that forces every
+# distinct observed name to appear, and a replica-level gate. Kept so that the
+# comparisons with it can be reproduced. Paths are relative to this file.
+data_dir: ../data/raw
+output_dir: ../outputs/paper
+
+scenarios:
+  NCVR: scenarios/ncvr.yaml
+  PDS: scenarios/pds.yaml
+
+evaluation:
+  seeds: 20                 # replicate synthetic tasks per mode
+  target_precision: 0.90    # threshold chosen once on the observed task, then fixed
+
+# The paper's clean-name sampler: forenames and surnames drawn independently
+# within subgroup, every distinct name forced to appear at least once. Kept for
+# reproduction; it distorts name frequencies (see configs/study.yaml).
+synthesis:
+  method: independent
+
+learning:
+  pseudo_truth_floor: 0.70                       # learning parameter, not an evaluation threshold
+  sensitivity_floors: [0.50, 0.70, 0.90, 0.95]   # Figure 3
+
+# Learning modes. `profile` selects how the error profile is learned.
+#   gate:        generator-level policy (below) that accepts or rejects the mode's
+#                generator from all its replicas; null = ungated.
+#   legacy_gate: the paper's per-replica policy (legacy_gate_policies); gated modes
+#                keep only passing replicas in tables/legacy_replica_gate/.
+modes:
+  - label: Supervised
+    profile: supervised
+    gate: benchmark
+    legacy_gate: B_score_tight_live
+  - label: Pseudo-truth + label-free gate
+    profile: pseudo_truth
+    gate: live
+    legacy_gate: B_score_tight_live
+  - label: Pseudo-truth only
+    profile: pseudo_truth
+    gate: null
+    legacy_gate: null
+
+# Generator-level OF gate (src/ofeval/gate.py). For each diagnostic it compares
+# the observed task with the centroid of the R replicas (the generator's bias) and
+# with the replicas' own leave-one-out spread (noise). A check fails only when the
+# bias exceeds BOTH the noise quantile at 1 - alpha AND the stated margin. Margins
+# are equivalence claims in natural units: rates and shares in proportion points,
+# `_tv` diagnostics in total-variation distance. The values below are explicit
+# placeholders (2 points) until they are tied to linkage impact (plan, M4).
+gate:
+  alpha: 0.05
+  policies:
+    live:
+      label_free: true
+      description: Observable without labels; population and score-landscape layers.
+      margins:
+        top_forename_share: 0.02
+        top_surname_share: 0.02
+        match_probability_band_mass_tv: 0.02
+        candidate_size_distribution_tv: 0.02
+    benchmark:
+      label_free: false
+      description: Benchmark with known truth; adds every mechanism-layer diagnostic.
+      margins:
+        top_forename_share: 0.02
+        top_surname_share: 0.02
+        match_probability_band_mass_tv: 0.02
+        candidate_size_distribution_tv: 0.02
+        error_exposure: 0.02
+        forename_error_rate: 0.02
+        surname_error_rate: 0.02
+        full_surname_replacement: 0.02
+        multi_field_error: 0.02
+
+# Policy reported for ungated modes as a diagnostic.
+main_gate_policy: live
+legacy_main_gate_policy: B_score_tight_live
+
+# Legacy per-replica gate policies (the paper's analysis): hard checks
+# (diagnostic: tolerance). A replica passes when every |distance| <= tolerance.
+# `label_free: true` policies may only use diagnostics observable without truth labels.
+# Unique-name counts hold by construction of the synthesiser, so they are checked
+# as invariants on every replica rather than listed here.
+legacy_gate_policies:
+  A_current_live:
+    label_free: true
+    description: Structural checks plus broad score-landscape check.
+    checks:
+      top_forename_share: 0.05
+      top_surname_share: 0.05
+      match_probability_band_mass_tv: 0.10
+  B_score_tight_live:
+    label_free: true
+    description: Tight observable gate (used in the paper); stricter score and candidate-set checks.
+    checks:
+      top_forename_share: 0.05
+      top_surname_share: 0.05
+      match_probability_band_mass_tv: 0.05
+      candidate_size_distribution_tv: 0.06
+  C_mechanistic_moderate:
+    label_free: false
+    description: Benchmark validation gate; field error burden and co-occurrence are hard checks.
+    checks:
+      top_forename_share: 0.05
+      top_surname_share: 0.05
+      match_probability_band_mass_tv: 0.10
+      error_exposure: 0.05
+      forename_error_rate: 0.05
+      surname_error_rate: 0.05
+      multi_field_error: 0.05
+  D_mechanistic_strict:
+    label_free: false
+    description: Strict benchmark gate; full surname replacement is a hard check.
+    checks:
+      top_forename_share: 0.05
+      top_surname_share: 0.05
+      match_probability_band_mass_tv: 0.05
+      error_exposure: 0.025
+      forename_error_rate: 0.025
+      surname_error_rate: 0.025
+      full_surname_replacement: 0.025
+      multi_field_error: 0.025

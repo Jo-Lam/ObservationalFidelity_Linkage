@@ -1,0 +1,33 @@
+name: NCVR
+source:
+  file: ncvoter-20231002_minimal_50k.csv
+max_rows: 10000          # first 10,000 records form the reference file
+columns:
+  id: ncid
+  forename: first_name
+  surname: last_name
+subgroup:
+  name: ethnic_group
+  column: ethnicity
+  coding: ncvr_collapsed  # W -> Non-Hispanic White, B -> Non-Hispanic Black, others pooled
+  reference_group: Non-Hispanic White
+
+# Injected (true) error mechanism of the observed comparison file.
+observed_corruption:
+  seed: 20231002
+  forename_error_rate: 0.19
+  surname_error_rate: 0.21
+  multi_field_error_rate: 0.08
+  full_surname_replacement_rate: 0.10   # record-level; capped at the surname error rate
+
+# Name-only linkage: auxiliary fields are not used for blocking or scoring.
+linkage:
+  blocking_rules:
+    - [surname_prefix2, forename_prefix2]
+    - [surname_prefix2, forename_initial, surname_len_bin]
+  scoring:
+    intercept: -7.0
+    forename_weight: 3.0
+    surname_weight: 5.0
+    exact_forename_bonus: 1.0
+    exact_surname_bonus: 1.5

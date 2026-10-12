@@ -1,0 +1,39 @@
+# The paper's stated PDS design: a 100,000-record synthetic PDS spine and an
+# incoming file of 20,000 records (20%), each with exactly one true match.
+name: PDS
+source:
+  file: 100000_synthetic_PDS_records_97series.xlsx
+  sheet: 100000_synthetic_PDS_records_97
+max_rows: 100000
+# The 100k extract contains PDS test-harness records (e.g. "OSSIE | IQZ-APR-PDS-SIMPLE-FIFTY-A"
+# x50, "VERYVERY...LONG..." x73): ~1.9% of records in large identical-name clusters. They
+# lower exact-match precision from 0.878 to 0.711. They are excluded (decision 2026-10-10):
+# they do not represent people. Applied to the spine before the incoming subset is drawn.
+exclude:
+  name_pattern: "\\d|-.*-|VERYVERY"
+  max_full_name_cluster: 20
+incoming:
+  fraction: 0.2
+  seed: 20240718
+columns:
+  id: UNIQUE_ID
+  forename: GIVEN_NAME
+  surname: FAMILY_NAME
+
+observed_corruption:
+  seed: 20240717
+  forename_error_rate: 0.21
+  surname_error_rate: 0.21
+  multi_field_error_rate: 0.08
+  full_surname_replacement_rate: 0.09
+
+linkage:
+  blocking_rules:
+    - [surname_prefix2, forename_prefix2]
+    - [surname_prefix2, forename_initial, surname_len_bin]
+  scoring:
+    intercept: -7.0
+    forename_weight: 3.0
+    surname_weight: 5.0
+    exact_forename_bonus: 1.0
+    exact_surname_bonus: 1.5

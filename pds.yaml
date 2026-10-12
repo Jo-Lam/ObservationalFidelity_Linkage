@@ -1,0 +1,27 @@
+name: PDS
+source:
+  file: 10000_synthetic_PDS_records(in).xlsx
+  sheet: 10000_synthetic_PDS_records(in)
+max_rows: 10000
+columns:
+  id: UNIQUE_ID
+  forename: GIVEN_NAME
+  surname: FAMILY_NAME
+
+observed_corruption:
+  seed: 20240717
+  forename_error_rate: 0.21
+  surname_error_rate: 0.21
+  multi_field_error_rate: 0.08
+  full_surname_replacement_rate: 0.09
+
+linkage:
+  blocking_rules:
+    - [surname_prefix2, forename_prefix2]
+    - [surname_prefix2, forename_initial, surname_len_bin]
+  scoring:
+    intercept: -7.0
+    forename_weight: 3.0
+    surname_weight: 5.0
+    exact_forename_bonus: 1.0
+    exact_surname_bonus: 1.5
